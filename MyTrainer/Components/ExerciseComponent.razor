@@ -1,0 +1,56 @@
+﻿@using MyTrainer.Data
+@using MyTrainer.Models
+
+<Alert Color="AlertColor.Secondary">
+    <div class="row m-1">
+        @Exercise.Index. @Exercise.Name | @Exercise.MuscleGroup | @Exercise.Description
+    </div>
+    <div class="row m-1">
+        @Exercise.SetCount x @Exercise.Reps
+    </div>
+    <div class="row m-1">
+        <a href="@Exercise.Url" class="btn btn-secondary btn-sm">Link</a>
+    </div>
+    @if (ShowSets)
+    {
+        <Accordion Class="mb-2">
+            <AccordionItem Title="Progress">
+                <Content>
+                    @foreach (var set in Exercise.Sets.OrderBy(s => s.Index))
+                    {
+                        <SetComponent Set="@set" Mode="@SetComponent.SetMode.Show" OnSetChanged="@((message) => OnExerciseChanged?.Invoke(message))" />
+                    }
+                </Content>
+            </AccordionItem>
+        </Accordion>
+    }
+</Alert>
+
+@code {
+    [Inject]
+    private Repository<Set> SetRepository { get; set; } = default!;
+
+    [Parameter]
+    public Exercise Exercise { get; set; }
+
+    [Parameter]
+    public bool ShowSets { get; set; }
+
+    [Parameter]
+    public Action<string> OnExerciseChanged { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ShowSets)
+        {
+            var sets = await SetRepository.GetAllWithPredicate(x => x.ExerciseId == Exercise.Id);
+            if(sets is not null)
+            {
+                Exercise.Sets = sets.ToList();
+            }
+        }
+
+        await base.OnInitializedAsync();
+    }
+    
+}

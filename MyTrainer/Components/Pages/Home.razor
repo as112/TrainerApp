@@ -1,0 +1,137 @@
+﻿@page "/2"
+
+@using MyTrainer.Models
+@using MyTrainer.Data
+
+@inject Repository<Workout> WorkoutRepository
+@inject Repository<Schedule> ScheduleRepository
+@inject Repository<Exercise> ExerciseRepository
+@inject Repository<Set> SetRepository
+
+<SetComponent Mode="@SetComponent.SetMode.Edit" OnSetChanged="@Notify"/>
+
+@if (workoutToDo is not null && workoutToDo.Exercises is not null)
+{
+    <Accordion Class="mb-2">
+        <AccordionItem Title="@workoutToDo.Name">
+            <Content>
+                @foreach (var exercise in workoutToDo.Exercises.OrderBy(s => s.Index))
+                {
+                    <Alert Color="AlertColor.Primary">
+                        <div class="row m-1">
+                            @exercise.Index. @exercise.Name | @exercise.MuscleGroup | @exercise.Description
+                        </div>
+                        <div class="row m-1">
+                            @exercise.SetCount x @exercise.Reps
+                        </div>
+                        <div class="row m-1">
+                            <a href="@exercise.Url" class="btn btn-secondary btn-sm">Link</a>
+                        </div>
+                        @if(workoutToDo.WorkoutState == WorkoutState.InProcess)
+                        {
+                            <Accordion Class="mb-2">
+                                <AccordionItem Title="Progress">
+                                    <Content>
+                                        @foreach (var set in exercise.Sets.OrderBy(s => s.Index))
+                                        {
+                                            <Alert Color="AlertColor.Info">
+                                                <div class="row m-1">
+                                                    <div class="col">
+                                                        @set.Index
+                                                    </div>
+                                                    <div class="col">
+                                                        <input @bind="@set.ActualReps" />
+                                                    </div>
+                                                    <div class="col">
+                                                        <input @bind="@set.ActualWeight" />
+                                                    </div>
+                                                    <div class="col">
+                                                        <Button Class="btn btn-primary btn-sm mt-2" @onclick="@(() => SaveSet(set))">Save</Button>
+                                                    </div>
+                                                </div>
+                                            </Alert>
+                                        }
+                                    </Content>
+                                </AccordionItem>
+                            </Accordion>
+                        }
+                    </Alert>
+                }
+            </Content>
+        </AccordionItem>
+    </Accordion>
+}
+@if (workoutToDo.WorkoutState == WorkoutState.InWaiting)
+{
+    <div class="mb-5">
+        <Button Class="btn btn-primary btn-sm col-12" @onclick="StartAsync">Начать тренировку</Button>
+    </div>
+}
+@if (workoutToDo.WorkoutState == WorkoutState.InProcess)
+{
+    <div class="mb-5">
+        <Button Class="btn btn-primary btn-sm col-12" @onclick="StopAsync">Завершить тренировку</Button>
+    </div>
+}
+<Toasts class="p-3" Messages="messages" AutoHide="true" Delay="3000" Placement="ToastsPlacement.TopRight" />
+
+@code {
+    private Workout workoutToDo = new();
+    // private Workout workoutInProcess = new();
+    List<ToastMessage> messages = new List<ToastMessage>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var todayToDo = await ScheduleRepository.GetAllWithPredicate(s => s.Date == DateOnly.FromDateTime(DateTime.Now));
+        if (todayToDo is null || todayToDo.Count() == 0)
+            return;
+
+        var today = todayToDo.FirstOrDefault();
+        workoutToDo = await WorkoutRepository.GetByIdAsync(today.WorkoutId);
+
+        if (workoutToDo!.Exercises is null || workoutToDo.Exercises.Count() == 0)
+        {
+            var exercises = await ExerciseRepository.GetAllWithPredicate(s => s.WorkoutId == workoutToDo.Id);
+            workoutToDo.Exercises = exercises.ToList();
+            foreach (var exercise in workoutToDo.Exercises)
+            {
+                var sets = await SetRepository.GetAllWithPredicate(s => s.ExerciseId == exercise.Id);
+                exercise.Sets = sets.ToList();
+            }
+        }
+
+        await base.OnInitializedAsync();
+    }
+
+    private async Task StartAsync()
+    {
+        workoutToDo.WorkoutState = WorkoutState.InProcess;
+        workoutToDo.StartedAt = DateTime.Now;
+        await WorkoutRepository.UpdateAsync(workoutToDo);
+        StateHasChanged();
+    }
+    private async Task StopAsync()
+    {
+        workoutToDo.WorkoutState = WorkoutState.Complited;
+        workoutToDo.FinishedAt = DateTime.Now;
+        await WorkoutRepository.UpdateAsync(workoutToDo);
+        StateHasChanged();
+    }
+    private async Task SaveSet(Set set)
+    {
+        var ex = await ExerciseRepository.GetByIdAsync(set.ExerciseId);
+        ex.IsComplited = true;
+        await ExerciseRepository.UpdateAsync(ex);
+        await SetRepository.UpdateAsync(set);
+        ShowMessage("Сохранено", ToastType.Success);
+    }
+
+    public void Notify(string message)
+    {
+        ShowMessage(message, ToastType.Success);
+        StateHasChanged();
+    }
+
+    private void ShowMessage(string message, ToastType toastType) =>
+        messages.Add(new ToastMessage { Type = toastType, Message = message });
+}

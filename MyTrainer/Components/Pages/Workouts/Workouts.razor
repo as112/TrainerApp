@@ -1,0 +1,202 @@
+﻿@page "/workouts"
+
+@using Microsoft.EntityFrameworkCore
+@using MyTrainer.Models
+@using MyTrainer.Data
+
+@inject Repository<Exercise> ExerciseRepository
+@inject Repository<Workout> WorkoutRepository
+
+@if(workouts is not null)
+{
+    @foreach (var workout in workouts)
+    {
+        <Accordion Class="mb-4">
+            <AccordionItem Title="@workout.Name">
+                <Content>
+                    @foreach (var exercise in workout.Exercises.OrderBy(s => s.Index))
+                    {
+                        <Alert Color="AlertColor.Primary">
+                            <div class="row m-1">
+                                @exercise.Index. @exercise.Name | @exercise.MuscleGroup | @exercise.Description
+                            </div>
+                            <div class="row m-1">
+                                @exercise.SetCount x @exercise.Reps
+                            </div>
+                        </Alert>
+                    }
+                    <Button Class="btn btn-outline-secondary btn-sm" @onclick="@(() => EditWorkout(workout))">Edit</Button>
+                    <Button Class="btn btn-outline-danger btn-sm" @onclick="@(() => ShowConfirmationAsync(workout))">Delete</Button>
+                </Content>
+            </AccordionItem>
+        </Accordion>
+    }
+}
+
+<div class="mb-5">
+    <Button Class="btn btn-outline-secondary btn-sm" @onclick="ShowAddNewWorkout">Add new workout</Button>
+</div>
+
+@if (showAddWorkout)
+{
+    <div class="row m-1">
+        Name:
+    </div>
+    <div class="row m-1">
+        <input @bind=@workout.Name />
+    </div>
+    
+    @foreach (var exercise in workout.Exercises.OrderBy(s => s.Index))
+    {
+        <Alert Color="AlertColor.Primary">
+            <div class="row m-1">
+                @exercise.Index. @exercise.Name | @exercise.MuscleGroup | @exercise.Description
+            </div>
+            <div class="row m-1">
+                @exercise.SetCount x @exercise.Reps
+            </div>
+            <Button Class="btn btn-outline-danger btn-sm" @onclick="@(() => DeleteExerciseAsync(exercise))">Delete</Button>
+        </Alert>
+    }
+
+    <div class="mb-5">
+        <Button Class="btn btn-outline-secondary btn-sm" @onclick="ShowAddExercise">Add exercise</Button>
+    </div>
+
+    @if (showAddExercise)
+    {
+        @foreach (var group in exercisesGroups)
+        {
+            <Accordion @ref="groups">
+                <AccordionItem Title="@group.Key">
+                    <Content>
+                        @foreach (var exercise in group)
+                        {
+                            <Accordion @ref="exs">
+                                <AccordionItem Title=@($"{@exercise.Name} | {@exercise.Description}")>
+                                    <Content>
+                                        <div class="row m-1">
+                                            <div class="row m-1">
+                                                Set count: <input class="form-control form-control-sm" @bind=@exercise.SetCount />
+                                            </div>
+
+                                            <div class="row m-1">
+                                                Reps count: <input class="form-control form-control-sm" @bind=@exercise.Reps />
+                                            </div>
+                                        </div>
+                                        <Button Class="btn btn-outline-secondary btn-sm" @onclick="@(() => AddExerciseToList(exercise))">Add</Button>
+                                    </Content>
+                                </AccordionItem>
+                            </Accordion>
+                        }
+                    </Content>
+                </AccordionItem>
+            </Accordion>
+        }
+    }
+    <div class="mb-5">
+        <Button Class="btn btn-outline-secondary btn-sm" @onclick="HideDropdown">Done</Button>
+    </div>
+}
+
+<ConfirmDialog @ref="dialog" />
+
+@code {
+    private ConfirmDialog dialog = default!;
+    private Accordion groups = default!;
+    private Accordion exs = default!;
+
+    private List<Workout> workouts = new();
+    private Workout workout;
+    private List<IGrouping<string, Exercise>> exercisesGroups = default!;
+
+    private bool showAddWorkout = false;
+    private bool showAddExercise = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ws = await WorkoutRepository.GetAllWithPredicate(s => s.WorkoutState == WorkoutState.None);
+        workouts = ws.ToList();
+        foreach (var item in workouts)
+        {
+            var exs = await ExerciseRepository.GetAllWithPredicate(s => s.WorkoutId == item.Id);
+            item.Exercises = exs.ToList();
+        }
+    }
+    private async Task ShowAddNewWorkout()
+    {
+        workout = new Workout();
+        await WorkoutRepository.AddAsync(workout);
+        showAddWorkout = true;
+        StateHasChanged();
+    }
+    private async Task ShowAddExercise()
+    {
+        var baseExercises = await ExerciseRepository.GetAllWithPredicate(s => s.WorkoutId == null);
+        exercisesGroups = baseExercises.Select(a => new Exercise
+                {
+                    Name = a.Name,
+                    Description = a.Description,
+                    MuscleGroup = a.MuscleGroup,
+                    Url = a.Url
+                })
+                .GroupBy(s => s.MuscleGroup)
+                .OrderBy(x => x.Key)
+                .ToList();
+
+        showAddExercise = true;
+        StateHasChanged();
+    }
+    private async Task AddExerciseToList(Exercise item)
+    {
+        var exCount = await ExerciseRepository.GetAllWithPredicate(x => x.WorkoutId == workout.Id);
+        item.Index = exCount is null ? 0 : exCount.Count() + 1;
+        item.Workout = workout;
+        item.WorkoutId = workout.Id;
+        workout.Exercises.Add(item);
+        await ExerciseRepository.AddAsync(item);
+        await WorkoutRepository.UpdateAsync(workout);
+
+        await exs.HideAllAccordionItemsAsync();
+        await groups.HideAllAccordionItemsAsync();
+
+        showAddExercise = false;
+        StateHasChanged();
+    }
+    private async Task HideDropdown()
+    {
+        var list = await WorkoutRepository.GetAllWithPredicate(s => s.WorkoutState == WorkoutState.None);
+        workouts = list.ToList();
+        showAddWorkout = false;
+        StateHasChanged();
+    }
+    private async Task ShowConfirmationAsync(Workout workout)
+    {
+        var confirmation = await dialog.ShowAsync(
+            title: "Are you sure you want to delete this?",
+            message1: "This will delete the record. Once deleted can not be rolled back.",
+            message2: workout.Name);
+
+        if (confirmation)
+        {
+            await WorkoutRepository.DeleteAsync(workout);
+            workouts = await WorkoutRepository.GetAllAsync();
+
+            StateHasChanged();
+        }
+    }
+    private void EditWorkout(Workout wo)
+    {
+        workout = wo;
+        showAddWorkout = true;
+        StateHasChanged();
+    }
+    private async Task DeleteExerciseAsync(Exercise e)
+    {
+        var w = await WorkoutRepository.GetByIdAsync(e.WorkoutId ?? Guid.Empty);
+        w.Exercises.Remove(e);
+        await ExerciseRepository.DeleteAsync(e);
+        await WorkoutRepository.UpdateAsync(w);
+        StateHasChanged();
+    }
+}

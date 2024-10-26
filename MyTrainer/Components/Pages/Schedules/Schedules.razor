@@ -1,0 +1,175 @@
+﻿@page "/schedules"
+
+@using MyTrainer.Models
+@using MyTrainer.Data
+
+@inject Repository<Workout> WorkoutRepository
+@inject Repository<Schedule> ScheduleRepository
+@inject Repository<Exercise> ExerciseRepository
+
+<div class="mt-4 mb-2">
+    @foreach (var schedule in schedules)
+    {
+        <div class="row mb-1">
+            <div class="col col-8">
+                @schedule.Date: @_keyValuePairs[schedule.Id].Name
+            </div>
+            <div class="col col-2 text-end">
+                @if (_keyValuePairs[schedule.Id].WorkoutState == WorkoutState.Complited)
+                {
+                    <label class="text-success">Complited</label>
+                }
+            </div>
+            <div class="col col-2 text-end">
+                <Button Class="btn btn-outline-danger btn-sm" @onclick="@(() => DeleteScheduleAsync(schedule))">Delete</Button>
+            </div>
+        </div>
+    
+    }
+
+    <div class="mb-5">
+        <Button Class="btn btn-outline-secondary btn-sm" @onclick="ShowAddNewSchedule">Add new schedule</Button>
+    </div>
+
+</div>
+
+@if (showAddSchedule)
+{
+    <div class="row m-1">
+        <div class="col col-6">
+            <DateInput TValue="DateOnly" class="form-control" @bind-Value="schedule.Date" />
+        </div>
+        <div class="col col-6">
+            <Dropdown Color="DropdownColor.Secondary" Size="DropdownSize.Small">
+                <DropdownToggleButton>@selectedWorkout.Name</DropdownToggleButton>
+                <DropdownMenu>
+                    @foreach (var item in workouts)
+                    {
+                        <DropdownItem Type="DropdownItemType.Button" @onclick="@(() => OnDropdownClick(item))">@item.Name</DropdownItem>
+                    }
+                </DropdownMenu>
+            </Dropdown>
+        </div>
+    </div>
+    <div class="row m-1">
+        <Button Class="btn btn-outline-secondary btn-sm" @onclick="AddNewSchedule">Add</Button>
+    </div>
+}
+
+<ConfirmDialog @ref="dialog" />
+<Toasts class="p-3" Messages="messages" AutoHide="true" Delay="3000" Placement="ToastsPlacement.TopRight" />
+
+@code {
+    private ConfirmDialog dialog = default!;
+    List<ToastMessage> messages = new List<ToastMessage>();
+
+    private List<Schedule> schedules = new();
+    private List<Workout> workouts = new();
+    private bool showAddSchedule = false;
+    private Schedule schedule = new();
+    private Workout selectedWorkout = new();
+
+    private Dictionary<Guid, Workout> _keyValuePairs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        schedules = await ScheduleRepository.GetAllAsync();
+        foreach (var item in schedules)
+        {
+            var x = await WorkoutRepository.GetAllWithPredicate(s => s.ScheduleId == item.Id);
+            if(x is not null && x.Count() > 0)
+            {
+                _keyValuePairs.Add(item.Id, x.FirstOrDefault() ?? new());
+            }
+        }
+        var w = await WorkoutRepository.GetAllWithPredicate(s => s.ScheduleId == null);
+        workouts = w.ToList();
+        await base.OnInitializedAsync();
+    }
+
+    private async Task AddNewSchedule()
+    {
+        if (selectedWorkout.Name == "_______________")
+        {
+            ShowMessage("Выберите тренировку", ToastType.Warning);
+            return;
+        }
+
+        var workout = new Workout
+            {
+                Name = selectedWorkout.Name,
+                WorkoutState = WorkoutState.InWaiting
+            };
+
+        if (selectedWorkout.Exercises.Count() == 0)
+        {
+            var exercises = await ExerciseRepository.GetAllWithPredicate(s => s.WorkoutId == selectedWorkout.Id);
+            selectedWorkout.Exercises = exercises.ToList();
+        }
+
+        workout.Exercises = selectedWorkout.Exercises
+            .Select(s => new Exercise
+                {
+                    Name = s.Name,
+                    Description = s.Description,
+                    MuscleGroup = s.MuscleGroup,
+                    Url = s.Url,
+                    Index = s.Index,
+                    SetCount = s.SetCount,
+                    Reps = s.Reps,
+                    WorkoutId = workout.Id,
+                    Sets = s.Sets
+                })
+            .ToList();
+
+        foreach (var exercise in workout.Exercises)
+        {
+            exercise.Sets = new();
+            for (int i = 1; i <= exercise.SetCount; i++)
+            {
+                var set = new Set
+                    {
+                        ExerciseId = exercise.Id,
+                        Index = i
+                    };
+                exercise.Sets.Add(set);
+            }
+        }
+
+        workout.ScheduleId = schedule.Id;
+        workout.WorkoutState = WorkoutState.InWaiting;
+        schedule.WorkoutId = workout.Id;
+        _keyValuePairs.Add(workout.ScheduleId ?? Guid.Empty, workout);
+
+        await WorkoutRepository.AddAsync(workout);
+        await ScheduleRepository.AddAsync(schedule);
+        schedules = await ScheduleRepository.GetAllAsync();
+        showAddSchedule = false;
+        StateHasChanged();
+        ShowMessage("Сохранено", ToastType.Success);
+    }
+    private void ShowAddNewSchedule()
+    {
+        schedule = new Schedule();
+        selectedWorkout = new();
+        selectedWorkout.Name = "_______________";
+        schedule.Date = DateOnly.FromDateTime(DateTime.Now);
+        showAddSchedule = true;
+        StateHasChanged();
+    }
+    private void OnDropdownClick(Workout workout)
+    {
+        selectedWorkout = workout;
+    }
+    private async Task DeleteScheduleAsync(Schedule sch)
+    {
+        var w = await WorkoutRepository.GetByIdAsync(sch.WorkoutId);
+        await WorkoutRepository.DeleteAsync(w);
+        await ScheduleRepository.DeleteAsync(sch);
+        schedules = await ScheduleRepository.GetAllAsync();
+        StateHasChanged();
+    }
+
+    private void ShowMessage(string message, ToastType toastType) => 
+        messages.Add(new ToastMessage { Type = toastType, Message = message });
+}

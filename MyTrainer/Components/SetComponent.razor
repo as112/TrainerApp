@@ -1,0 +1,62 @@
+﻿@using MyTrainer.Models
+@using MyTrainer.Data
+
+@inject Repository<Set> SetRepository
+
+@if(Mode == SetMode.Add)
+{
+    <p>Add mode is not implemented</p>
+}
+else if(Mode == SetMode.Edit)
+{
+    <Alert Color="AlertColor.Warning">
+        <div class="row m-1">
+            <div class="col col-1">
+                @Set.Index
+            </div>
+            <div class="col">
+                <input class="form-control form-control-sm" @bind="@Set.ActualReps" />
+            </div>
+            <div class="col">
+                <input class="form-control form-control-sm" @bind="@Set.ActualWeight" />
+            </div>
+            <div class="col">
+                <Button Class="btn btn-primary btn-sm mt-2" @onclick="@(() => SaveSet(Set))">Save</Button>
+            </div>
+        </div>
+    </Alert>
+}
+else if(Mode == SetMode.Show)
+{
+    <p>Show mode is not implemented</p>
+}
+
+@code {
+    [Parameter]
+    public Set Set { get; set; }
+
+    [Parameter]
+    public SetMode Mode { get; set; }
+
+    [Parameter]
+    public Action<string> OnSetChanged { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Set = await SetRepository.GetByIdAsync(Guid.Parse("5C14D5AD-11B3-4881-B39C-FB1B7205C2DE")) ?? new();
+        await base.OnInitializedAsync();
+    }
+
+    private async Task SaveSet(Set set)
+    {
+        await SetRepository.UpdateAsync(set);
+        OnSetChanged?.Invoke("Подход сохранен");
+    }
+
+    public enum SetMode
+    {
+        Add,
+        Edit,
+        Show
+    }
+}

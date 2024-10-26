@@ -1,0 +1,75 @@
+﻿@using MyTrainer.Models
+@using MyTrainer.Data
+
+@inject Repository<Exercise> ExerciseRepository
+
+<h3>AddExercise</h3>
+
+<div class="row m-1">
+    Name:
+</div>
+<div class="row m-1">
+    <input @bind=@exercise.Name />
+</div>
+<div class="row m-1">
+    Description:
+</div>
+<div class="row m-1">
+    <input @bind=@exercise.Description />
+</div>
+<div class="row m-1">
+    URL:
+</div>
+<div class="row m-1">
+    <input @bind=@exercise.Url />
+</div>
+<div class="row m-1">
+    MuscleGroup:
+</div>
+<div class="row m-1">
+    <input @bind=@exercise.MuscleGroup />
+</div>
+
+<Button class="mt-3" Color="ButtonColor.Success" Type="ButtonType.Button" @onclick="OnClick">
+    @if (addFlag) 
+    {
+        <div>Create</div>
+    }
+    else
+    {
+        <div>Edit</div>
+    }
+</Button>
+
+@code {
+    private Exercise? exercise = default!;
+
+    [Parameter] public Guid ExerciseId { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClickCallback { get; set; }
+
+    private bool addFlag = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        exercise = await ExerciseRepository.GetByIdAsync(ExerciseId);
+        if(exercise is null)
+        {
+            exercise = new();
+            addFlag = true;
+        }
+
+        await base.OnInitializedAsync();
+    }
+    private async Task OnClick()
+    {
+        if (addFlag)
+        {
+            await ExerciseRepository.AddAsync(exercise);
+        }
+        else
+        {
+            await ExerciseRepository.UpdateAsync(exercise);
+        }
+        await OnClickCallback.InvokeAsync();
+    }
+}
